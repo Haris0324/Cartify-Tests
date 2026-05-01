@@ -2,11 +2,12 @@ package com.cartify;
 
 import org.junit.jupiter.api.*;
 import org.openqa.selenium.*;
-import org.openqa.selenium.chrome.ChromeDriver;
 import org.openqa.selenium.chrome.ChromeOptions;
+import org.openqa.selenium.remote.RemoteWebDriver;
 import org.openqa.selenium.support.ui.ExpectedConditions;
 import org.openqa.selenium.support.ui.WebDriverWait;
 
+import java.net.URI;
 import java.time.Duration;
 import java.util.UUID;
 
@@ -23,18 +24,24 @@ public class AppTest {
     private static String testPassword = "password123";
 
     @BeforeAll
-    public static void setupAll() {
-        baseUrl = System.getProperty("baseUrl", "http://localhost:5173");
+    public static void setupAll() throws Exception {
+
+        baseUrl = System.getProperty("baseUrl", "http://3.234.226.163:5174");
         testUserEmail = "user_" + UUID.randomUUID().toString().substring(0, 8) + "@test.com";
-        
+
         ChromeOptions options = new ChromeOptions();
         options.addArguments("--headless=new");
-        options.addArguments("--disable-gpu");
         options.addArguments("--no-sandbox");
         options.addArguments("--disable-dev-shm-usage");
         options.addArguments("--window-size=1920,1080");
 
-        driver = new ChromeDriver(options);
+        URI seleniumUri = URI.create("http://selenium:4444/wd/hub");
+
+        driver = new RemoteWebDriver(
+            seleniumUri.toURL(),
+            options
+        );
+
         wait = new WebDriverWait(driver, Duration.ofSeconds(10));
     }
 
