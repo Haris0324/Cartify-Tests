@@ -26,7 +26,7 @@ public class AppTest {
     @BeforeAll
     public static void setupAll() throws Exception {
 
-        baseUrl = System.getProperty("baseUrl", "http://3.234.226.163:5174");
+        baseUrl = System.getProperty("baseUrl", "http://3.234.226.163:5173");
         testUserEmail = "user_" + UUID.randomUUID().toString().substring(0, 8) + "@test.com";
 
         ChromeOptions options = new ChromeOptions();
