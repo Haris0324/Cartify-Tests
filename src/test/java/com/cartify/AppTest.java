@@ -37,7 +37,7 @@ public class AppTest {
 
         String seleniumUrl = System.getProperty(
             "seleniumUrl",
-            "http://localhost:4444/wd/hub"
+            "http://selenium:4444/wd/hub"
         );
 
         URI seleniumUri = URI.create(seleniumUrl);
@@ -47,7 +47,8 @@ public class AppTest {
             options
         );
 
-        wait = new WebDriverWait(driver, Duration.ofSeconds(10));
+        wait = new WebDriverWait(driver, Duration.ofSeconds(20));
+        driver.manage().timeouts().implicitlyWait(Duration.ofSeconds(5));
     }
 
     @AfterAll
