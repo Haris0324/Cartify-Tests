@@ -34,13 +34,17 @@ public class AppTest {
         options.addArguments("--disable-dev-shm-usage");
         options.addArguments("--window-size=1920,1080");
 
-        String seleniumUrl = System.getProperty(
-            "seleniumUrl",
-            "http://selenium:4444/wd/hub"
-        );
+        String seleniumUrl = System.getProperty("seleniumUrl", "http://selenium:4444/wd/hub");
+        System.out.println("Connecting to Selenium at: " + seleniumUrl);
+        System.out.println("Testing against Base URL: " + baseUrl);
 
-        URI seleniumUri = URI.create(seleniumUrl);
-        driver = new RemoteWebDriver(seleniumUri.toURL(), options);
+        try {
+            URI seleniumUri = URI.create(seleniumUrl);
+            driver = new RemoteWebDriver(seleniumUri.toURL(), options);
+        } catch (Exception e) {
+            System.err.println("Could not connect to Selenium Grid! Check if the container is running.");
+            throw e;
+        }
 
         // Increased timeout slightly for slower CI environments
         wait = new WebDriverWait(driver, Duration.ofSeconds(30));
