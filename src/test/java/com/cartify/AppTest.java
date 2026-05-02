@@ -35,7 +35,12 @@ public class AppTest {
         options.addArguments("--disable-dev-shm-usage");
         options.addArguments("--window-size=1920,1080");
 
-        URI seleniumUri = URI.create("http://selenium:4444/wd/hub");
+        String seleniumUrl = System.getProperty(
+            "seleniumUrl",
+            "http://localhost:4444/wd/hub"
+        );
+
+        URI seleniumUri = URI.create(seleniumUrl);
 
         driver = new RemoteWebDriver(
             seleniumUri.toURL(),
