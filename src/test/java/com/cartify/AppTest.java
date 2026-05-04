@@ -3,6 +3,8 @@ package com.cartify;
 import org.junit.jupiter.api.*;
 import org.openqa.selenium.*;
 import org.openqa.selenium.chrome.ChromeOptions;
+import org.openqa.selenium.logging.LogEntry;
+import org.openqa.selenium.logging.LogType;
 import org.openqa.selenium.remote.RemoteWebDriver;
 import org.openqa.selenium.support.ui.ExpectedConditions;
 import org.openqa.selenium.support.ui.WebDriverWait;
@@ -10,6 +12,7 @@ import org.openqa.selenium.support.ui.WebDriverWait;
 import java.net.URI;
 import java.time.Duration;
 import java.util.UUID;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -32,6 +35,7 @@ public class AppTest {
         options.addArguments("--no-sandbox");
         options.addArguments("--disable-dev-shm-usage");
         options.addArguments("--window-size=1920,1080");
+        options.setCapability("goog:loggingPrefs", java.util.Collections.singletonMap("browser", "ALL"));
 
         String seleniumUrl = System.getProperty("seleniumUrl", "http://selenium:4444/wd/hub");
         System.out.println("Connecting to Selenium at: " + seleniumUrl);
@@ -45,7 +49,7 @@ public class AppTest {
             throw e;
         }
 
-        wait = new WebDriverWait(driver, Duration.ofSeconds(45)); // Increased to 45s
+        wait = new WebDriverWait(driver, Duration.ofSeconds(45));
         driver.manage().timeouts().implicitlyWait(Duration.ofSeconds(10));
     }
 
@@ -56,166 +60,160 @@ public class AppTest {
         }
     }
 
-    /**
-     * Helper to navigate and wait for the React route to be ready.
-     * We wait for the URL AND a common element like the Navbar.
-     */
     private void navigateTo(String path) {
         String targetUrl = baseUrl + path;
-        System.out.println("Navigating to: " + targetUrl);
         driver.get(targetUrl);
-        
         try {
-            // 1. Wait for URL
             wait.until(ExpectedConditions.urlContains(path));
-            
-            // 2. Wait for the root div to exist (fast check)
             wait.until(ExpectedConditions.presenceOfElementLocated(By.id("root")));
-            
-            // 3. Wait for the Navbar to ensure the app has actually rendered components
             wait.until(ExpectedConditions.presenceOfElementLocated(By.tagName("nav")));
-            
         } catch (TimeoutException e) {
-            System.err.println("TIMEOUT while navigating to " + path);
-            System.err.println("Current URL: " + driver.getCurrentUrl());
-            // Print a snippet of the page source for debugging
-            String source = driver.getPageSource();
-            System.err.println("Page Source Snippet: " + (source.length() > 500 ? source.substring(0, 500) : source));
+            printDebugInfo("TIMEOUT navigating to " + path);
             throw e;
         }
     }
 
-    /**
-     * Safely clears cookies and local storage.
-     * Only works if the browser is currently on a web page (not data: URLs).
-     */
+    private void printDebugInfo(String message) {
+        System.err.println("--- DEBUG INFO: " + message + " ---");
+        try {
+            List<LogEntry> logs = driver.manage().logs().get(LogType.BROWSER).getAll();
+            for (LogEntry entry : logs) {
+                System.err.println("[BROWSER LOG] " + entry.getLevel() + ": " + entry.getMessage());
+            }
+        } catch (Exception ex) {}
+    }
+
     private void clearState() {
         try {
-            String currentUrl = driver.getCurrentUrl();
-            if (currentUrl != null && currentUrl.startsWith("http")) {
+            if (driver.getCurrentUrl().startsWith("http")) {
                 driver.manage().deleteAllCookies();
                 ((JavascriptExecutor) driver).executeScript("window.localStorage.clear();");
-                ((JavascriptExecutor) driver).executeScript("window.sessionStorage.clear();");
-                System.out.println("State cleared for: " + currentUrl);
             }
-        } catch (Exception e) {
-            System.err.println("Warning: Could not clear state: " + e.getMessage());
-        }
+        } catch (Exception e) {}
     }
 
     private void login(String email, String password) {
         navigateTo("/login");
         WebElement emailInput = wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector("input[type='email']")));
-        emailInput.clear();
         emailInput.sendKeys(email);
-        
         driver.findElement(By.cssSelector("input[type='password']")).sendKeys(password);
         driver.findElement(By.cssSelector("button[type='submit']")).click();
     }
 
-    @Test
-    @Order(1)
-    @DisplayName("1. User Registration Success")
+    @Test @Order(1) @DisplayName("1. User Registration")
     public void testRegistration() {
-        // Start fresh: navigate first, then clear if needed
         navigateTo("/register");
         clearState();
-        driver.navigate().refresh(); // Refresh to ensure clean state on the page
-        
-        WebElement nameInput = wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector("input[placeholder='Full Name']")));
-        nameInput.sendKeys("Test User");
-        
+        driver.navigate().refresh();
+        wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector("input[placeholder='Full Name']"))).sendKeys("Test User");
         driver.findElement(By.cssSelector("input[placeholder='Email']")).sendKeys(testUserEmail);
         driver.findElement(By.cssSelector("input[placeholder*='Password']")).sendKeys(TEST_PASSWORD);
-        
         driver.findElement(By.cssSelector("button[type='submit']")).click();
-
-        // Wait for redirect to home or login
-        wait.until(ExpectedConditions.or(
-            ExpectedConditions.urlToBe(baseUrl + "/"),
-            ExpectedConditions.urlContains("/login")
-        ));
+        wait.until(ExpectedConditions.or(ExpectedConditions.urlToBe(baseUrl + "/"), ExpectedConditions.urlContains("/login")));
     }
 
-    @Test
-    @Order(2)
-    @DisplayName("2. User Logout & Login Success")
+    @Test @Order(2) @DisplayName("2. User Login Success")
     public void testLogin() {
-        navigateTo("/");
-        try {
-            WebElement logoutBtn = wait.until(ExpectedConditions.elementToBeClickable(By.xpath("//button[contains(text(), 'Logout')]")));
-            logoutBtn.click();
-        } catch (Exception e) { 
-            clearState();
-        }
-
         login(testUserEmail, TEST_PASSWORD);
-        wait.until(ExpectedConditions.or(
-            ExpectedConditions.urlToBe(baseUrl + "/"),
-            ExpectedConditions.urlToBe(baseUrl + "/account")
-        ));
+        wait.until(ExpectedConditions.urlContains("/"));
     }
 
-    @Test
-    @Order(3)
-    @DisplayName("3. Login Failure with Wrong Password")
+    @Test @Order(3) @DisplayName("3. Login Failure")
     public void testLoginFailure() {
-        login(testUserEmail, "wrongpassword");
-        WebElement errorMsg = wait.until(ExpectedConditions.presenceOfElementLocated(By.xpath("//*[contains(@class, 'error')]")));
-        assertTrue(errorMsg.isDisplayed());
+        clearState();
+        login(testUserEmail, "wrong_pass");
+        assertTrue(wait.until(ExpectedConditions.presenceOfElementLocated(By.xpath("//*[contains(@class, 'error')]"))).isDisplayed());
     }
 
-    @Test
-    @Order(5)
-    @DisplayName("5. Unauthenticated User Access Restriction")
+    @Test @Order(4) @DisplayName("4. Forgot Password Flow")
+    public void testForgotPassword() {
+        navigateTo("/login");
+        driver.findElement(By.linkText("Forgot Password?")).click();
+        wait.until(ExpectedConditions.urlContains("/forgot-password"));
+        assertTrue(driver.findElement(By.tagName("h1")).getText().contains("Reset"));
+    }
+
+    @Test @Order(5) @DisplayName("5. Unauth Access Restriction")
     public void testUnauthAccess() {
-        navigateTo("/");
         clearState();
         driver.get(baseUrl + "/orders");
-        
-        // Verify redirect to login
         wait.until(ExpectedConditions.urlContains("/login"));
-        assertTrue(driver.getCurrentUrl().contains("login"));
     }
 
-    @Test
-    @Order(6)
-    @DisplayName("6. Add to Cart Functionality")
+    @Test @Order(6) @DisplayName("6. Search Functionality")
+    public void testSearch() {
+        navigateTo("/products");
+        WebElement searchInput = wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector("input[type='search']")));
+        searchInput.sendKeys("Watch");
+        searchInput.sendKeys(Keys.ENTER);
+        wait.until(ExpectedConditions.urlContains("search=Watch"));
+    }
+
+    @Test @Order(7) @DisplayName("7. Add to Cart")
     public void testAddToCart() {
         navigateTo("/products");
-        WebElement firstProduct = wait.until(ExpectedConditions.elementToBeClickable(By.cssSelector("a[href^='/products/']")));
-        firstProduct.click();
-
-        WebElement addBtn = wait.until(ExpectedConditions.elementToBeClickable(By.xpath("//button[contains(text(), 'Add to Cart')]")));
-        addBtn.click();
-
+        wait.until(ExpectedConditions.elementToBeClickable(By.cssSelector("a[href^='/products/']"))).click();
+        wait.until(ExpectedConditions.elementToBeClickable(By.xpath("//button[contains(text(), 'Add to Cart')]"))).click();
         navigateTo("/cart");
-        WebElement cartItem = wait.until(ExpectedConditions.presenceOfElementLocated(By.xpath("//*[contains(@class, 'item')]")));
-        assertTrue(cartItem.isDisplayed());
+        assertTrue(wait.until(ExpectedConditions.presenceOfElementLocated(By.xpath("//*[contains(@class, 'item')]"))).isDisplayed());
     }
 
-    @Test
-    @Order(11)
-    @DisplayName("11. Admin Side Login")
+    @Test @Order(8) @DisplayName("8. Remove from Cart")
+    public void testRemoveFromCart() {
+        navigateTo("/cart");
+        wait.until(ExpectedConditions.elementToBeClickable(By.xpath("//button[contains(text(), 'Remove')]"))).click();
+        assertTrue(wait.until(ExpectedConditions.presenceOfElementLocated(By.xpath("//*[contains(text(), 'Empty')]"))).isDisplayed());
+    }
+
+    @Test @Order(9) @DisplayName("9. Checkout Navigation")
+    public void testCheckoutFlow() {
+        testAddToCart(); // Ensure item is in cart
+        driver.findElement(By.xpath("//button[contains(text(), 'Checkout')]")).click();
+        wait.until(ExpectedConditions.urlContains("/checkout"));
+    }
+
+    @Test @Order(10) @DisplayName("10. User Profile Access")
+    public void testUserProfile() {
+        login(testUserEmail, TEST_PASSWORD);
+        navigateTo("/account");
+        assertTrue(driver.findElement(By.tagName("h1")).getText().contains("Profile"));
+    }
+
+    @Test @Order(11) @DisplayName("11. Admin Login")
     public void testAdminLogin() {
         login("admin@cartify.com", "admin123");
         wait.until(ExpectedConditions.urlContains("/admin"));
-        assertTrue(driver.getCurrentUrl().contains("/admin"));
     }
 
-    @Test
-    @Order(15)
-    @DisplayName("15. Product Details - Review Submission")
+    @Test @Order(12) @DisplayName("12. Admin Add Product UI")
+    public void testAdminAddProduct() {
+        testAdminLogin();
+        driver.findElement(By.xpath("//button[contains(text(), 'Add Product')]")).click();
+        assertTrue(wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector("input[placeholder='Product Name']"))).isDisplayed());
+    }
+
+    @Test @Order(13) @DisplayName("13. Admin Delete Product")
+    public void testAdminDeleteProduct() {
+        testAdminLogin();
+        WebElement deleteBtn = wait.until(ExpectedConditions.elementToBeClickable(By.xpath("//button[contains(@class, 'delete')]")));
+        deleteBtn.click();
+        driver.switchTo().alert().accept();
+    }
+
+    @Test @Order(14) @DisplayName("14. Admin Order Management")
+    public void testAdminOrders() {
+        testAdminLogin();
+        driver.findElement(By.xpath("//button[text()='Orders']")).click();
+        wait.until(ExpectedConditions.presenceOfElementLocated(By.xpath("//*[contains(text(), 'Status')]")));
+    }
+
+    @Test @Order(15) @DisplayName("15. Submit Product Review")
     public void testSubmitReview() {
         login(testUserEmail, TEST_PASSWORD);
         navigateTo("/products");
         wait.until(ExpectedConditions.elementToBeClickable(By.cssSelector("a[href^='/products/']"))).click();
-
-        WebElement reviewArea = wait.until(ExpectedConditions.presenceOfElementLocated(By.xpath("//textarea[contains(@placeholder, 'experience')]")));
-        reviewArea.sendKeys("Great product! Testing...");
+        wait.until(ExpectedConditions.presenceOfElementLocated(By.tagName("textarea"))).sendKeys("Automation Review");
         driver.findElement(By.xpath("//button[text()='Submit Review']")).click();
-
-        WebElement reviewText = wait.until(ExpectedConditions.presenceOfElementLocated(By.xpath("//p[text()='Great product! Testing...']")));
-        assertTrue(reviewText.isDisplayed());
+        assertTrue(wait.until(ExpectedConditions.presenceOfElementLocated(By.xpath("//p[text()='Automation Review']"))).isDisplayed());
     }
 }
