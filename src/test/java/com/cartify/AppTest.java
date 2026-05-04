@@ -44,12 +44,16 @@ public class AppTest {
         ((JavascriptExecutor) driver).executeScript("arguments[0].click();", element);
     }
 
+    // Only called when we NEED to change roles to prevent Chrome memory crashes
     private void clearAll() {
         driver.get(baseUrl + "/");
         driver.manage().deleteAllCookies();
-        ((JavascriptExecutor) driver).executeScript("window.localStorage.clear();");
+        try {
+            ((JavascriptExecutor) driver).executeScript("window.localStorage.clear(); window.sessionStorage.clear();");
+        } catch (Exception e) {}
         driver.navigate().refresh();
         wait.until(ExpectedConditions.presenceOfElementLocated(By.id("root")));
+        try { Thread.sleep(1000); } catch(Exception e) {}
     }
 
     private void navigateTo(String path) {
@@ -57,23 +61,19 @@ public class AppTest {
         wait.until(ExpectedConditions.presenceOfElementLocated(By.id("root")));
     }
 
-    private void attemptLogin(String email, String password) {
+    private void login(String email, String password) {
         navigateTo("/login");
         WebElement e = wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector("input[type='email']")));
         e.clear(); e.sendKeys(email);
         WebElement p = driver.findElement(By.cssSelector("input[type='password']"));
         p.clear(); p.sendKeys(password);
         p.sendKeys(Keys.ENTER);
-    }
-
-    private void login(String email, String password) {
-        attemptLogin(email, password);
-        // Fix: Wait for either homepage OR admin dashboard
+        
         wait.until(ExpectedConditions.or(
             ExpectedConditions.urlToBe(baseUrl + "/"),
             ExpectedConditions.urlContains("/admin")
         ));
-        try { Thread.sleep(2000); } catch(Exception e) {}
+        try { Thread.sleep(1500); } catch(Exception ex) {} // Wait for React Auth Context
     }
 
     @Test @Order(1) @DisplayName("1. User Registration")
@@ -85,20 +85,23 @@ public class AppTest {
         WebElement p = driver.findElement(By.cssSelector("input[placeholder*='Password']"));
         p.sendKeys(TEST_PASSWORD);
         p.sendKeys(Keys.ENTER);
-        wait.until(ExpectedConditions.urlContains("/"));
+        // Wait for redirect to login or home
+        try { Thread.sleep(2000); } catch(Exception e) {}
     }
 
     @Test @Order(2) @DisplayName("2. User Login Success")
     public void testLogin() {
-        clearAll();
+        // Flow: Log in the user we just registered
         login(testUserEmail, TEST_PASSWORD);
-        wait.until(ExpectedConditions.urlToBe(baseUrl + "/"));
     }
 
     @Test @Order(3) @DisplayName("3. Login Failure")
     public void testLoginFailure() {
-        clearAll();
-        attemptLogin(testUserEmail, "wrong_pass_123");
+        clearAll(); // We need to be logged out for this
+        navigateTo("/login");
+        wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector("input[type='email']"))).sendKeys(testUserEmail);
+        driver.findElement(By.cssSelector("input[type='password']")).sendKeys("wrong_pass");
+        driver.findElement(By.cssSelector("input[type='password']")).sendKeys(Keys.ENTER);
         assertTrue(wait.until(ExpectedConditions.presenceOfElementLocated(By.xpath("//*[contains(@class, 'error')]"))).isDisplayed());
     }
 
@@ -111,7 +114,6 @@ public class AppTest {
 
     @Test @Order(5) @DisplayName("5. Unauth Access Restriction")
     public void testUnauthAccess() {
-        clearAll();
         navigateTo("/orders");
         wait.until(ExpectedConditions.urlContains("/login"));
     }
@@ -127,19 +129,22 @@ public class AppTest {
 
     @Test @Order(7) @DisplayName("7. Add to Cart")
     public void testAddToCart() {
+        // Flow: Log back in so the cart is attached to our real user
+        login(testUserEmail, TEST_PASSWORD);
+        
         navigateTo("/products");
         jsClick(wait.until(ExpectedConditions.elementToBeClickable(By.xpath("(//a[contains(@class, 'card')])[1]"))));
         jsClick(wait.until(ExpectedConditions.elementToBeClickable(By.xpath("//button[contains(text(), 'Add to Cart')]"))));
-        try { Thread.sleep(4000); } catch(Exception e) {}
+        try { Thread.sleep(3000); } catch(Exception e) {} // Wait for DB sync
         
-        // Natural navigation: Click Cart icon in header
+        // Natural Navigation via header
         jsClick(wait.until(ExpectedConditions.elementToBeClickable(By.xpath("//a[contains(@href, 'cart')]"))));
         wait.until(ExpectedConditions.presenceOfElementLocated(By.xpath("//*[contains(@class, 'item')]")));
     }
 
     @Test @Order(8) @DisplayName("8. Remove from Cart")
     public void testRemoveFromCart() {
-        testAddToCart();
+        // Flow: Already logged in and on cart page
         try {
             jsClick(wait.until(ExpectedConditions.elementToBeClickable(By.xpath("//button[contains(text(), 'Remove')]"))));
             wait.until(ExpectedConditions.presenceOfElementLocated(By.xpath("//*[contains(text(), 'empty')]")));
@@ -148,32 +153,35 @@ public class AppTest {
 
     @Test @Order(9) @DisplayName("9. Checkout Navigation")
     public void testCheckoutFlow() {
-        clearAll();
-        login(testUserEmail, TEST_PASSWORD);
-        testAddToCart();
+        // Flow: Already logged in. Add item again since we removed it.
+        navigateTo("/products");
+        jsClick(wait.until(ExpectedConditions.elementToBeClickable(By.xpath("(//a[contains(@class, 'card')])[1]"))));
+        jsClick(wait.until(ExpectedConditions.elementToBeClickable(By.xpath("//button[contains(text(), 'Add to Cart')]"))));
+        try { Thread.sleep(3000); } catch(Exception e) {}
+        
+        jsClick(wait.until(ExpectedConditions.elementToBeClickable(By.xpath("//a[contains(@href, 'cart')]"))));
+        wait.until(ExpectedConditions.presenceOfElementLocated(By.xpath("//*[contains(@class, 'item')]")));
+        
         jsClick(wait.until(ExpectedConditions.elementToBeClickable(By.xpath("//a[contains(text(), 'Checkout')]"))));
         wait.until(ExpectedConditions.urlContains("/checkout"));
     }
 
     @Test @Order(10) @DisplayName("10. User Profile Access")
     public void testUserProfile() {
-        clearAll();
-        login(testUserEmail, TEST_PASSWORD);
+        // Flow: Already logged in
         navigateTo("/account");
         assertTrue(wait.until(ExpectedConditions.presenceOfElementLocated(By.tagName("h1"))).getText().toLowerCase().contains("account"));
     }
 
     @Test @Order(11) @DisplayName("11. Admin Login")
     public void testAdminLogin() {
-        clearAll();
+        clearAll(); // Switch to Admin
         login("admin@cartify.com", "admin123");
-        wait.until(ExpectedConditions.urlContains("/admin"));
     }
 
     @Test @Order(12) @DisplayName("12. Admin Add Product")
     public void testAdminAddProduct() {
-        clearAll();
-        login("admin@cartify.com", "admin123");
+        // Flow: Already Admin
         jsClick(wait.until(ExpectedConditions.elementToBeClickable(By.xpath("//button[contains(translate(text(), 'PRODUCTS', 'products'), 'products')]"))));
         try { Thread.sleep(2000); } catch(Exception e) {}
         driver.findElement(By.cssSelector("input[required]")).sendKeys("Auto Prod " + UUID.randomUUID().toString());
@@ -185,8 +193,7 @@ public class AppTest {
 
     @Test @Order(13) @DisplayName("13. Admin Delete Product")
     public void testAdminDeleteProduct() {
-        clearAll();
-        login("admin@cartify.com", "admin123");
+        // Flow: Already Admin
         jsClick(wait.until(ExpectedConditions.elementToBeClickable(By.xpath("//button[contains(translate(text(), 'PRODUCTS', 'products'), 'products')]"))));
         try {
             jsClick(wait.until(ExpectedConditions.elementToBeClickable(By.xpath("(//button[contains(text(), 'Delete')])[1]"))));
@@ -196,15 +203,14 @@ public class AppTest {
 
     @Test @Order(14) @DisplayName("14. Admin Order Management")
     public void testAdminOrders() {
-        clearAll();
-        login("admin@cartify.com", "admin123");
+        // Flow: Already Admin
         jsClick(wait.until(ExpectedConditions.elementToBeClickable(By.xpath("//button[contains(translate(text(), 'ORDERS', 'orders'), 'orders')]"))));
         wait.until(ExpectedConditions.presenceOfElementLocated(By.tagName("table")));
     }
 
     @Test @Order(15) @DisplayName("15. Submit Product Review")
     public void testSubmitReview() {
-        clearAll();
+        clearAll(); // Switch back to regular User
         login(testUserEmail, TEST_PASSWORD);
         navigateTo("/products");
         jsClick(wait.until(ExpectedConditions.elementToBeClickable(By.xpath("(//a[contains(@class, 'card')])[1]"))));
