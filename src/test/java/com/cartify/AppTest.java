@@ -51,6 +51,7 @@ public class AppTest {
     }
 
     private void navigateTo(String path) {
+        System.out.println("Navigating to: " + path);
         driver.get(baseUrl + path);
         wait.until(ExpectedConditions.presenceOfElementLocated(By.id("root")));
     }
@@ -67,7 +68,7 @@ public class AppTest {
     private void login(String email, String password) {
         attemptLogin(email, password);
         wait.until(ExpectedConditions.or(ExpectedConditions.urlToBe(baseUrl + "/"), ExpectedConditions.urlContains("/admin")));
-        try { Thread.sleep(1000); } catch(Exception e) {}
+        try { Thread.sleep(2000); } catch(Exception e) {}
     }
 
     @Test @Order(1) @DisplayName("1. User Registration")
@@ -90,7 +91,7 @@ public class AppTest {
     @Test @Order(3) @DisplayName("3. Login Failure")
     public void testLoginFailure() {
         clearAll();
-        attemptLogin(testUserEmail, "wrong_password");
+        attemptLogin(testUserEmail, "wrong");
         assertTrue(wait.until(ExpectedConditions.presenceOfElementLocated(By.xpath("//*[contains(@class, 'error')]"))).isDisplayed());
     }
 
@@ -119,17 +120,28 @@ public class AppTest {
 
     @Test @Order(7) @DisplayName("7. Add to Cart")
     public void testAddToCart() {
+        doAddToCart();
+    }
+
+    private void doAddToCart() {
         navigateTo("/products");
-        jsClick(wait.until(ExpectedConditions.elementToBeClickable(By.cssSelector("a[class*='card']"))));
-        jsClick(wait.until(ExpectedConditions.elementToBeClickable(By.xpath("//button[contains(text(), 'Cart')]"))));
+        // Wait for cards and click the first link
+        WebElement card = wait.until(ExpectedConditions.elementToBeClickable(By.cssSelector("a[class*='card']")));
+        jsClick(card);
         
-        try { Thread.sleep(3000); } catch(Exception e) {}
+        // Wait for Add to Cart button and click it
+        WebElement addBtn = wait.until(ExpectedConditions.elementToBeClickable(By.xpath("//button[contains(text(), 'Add to Cart')]")));
+        jsClick(addBtn);
+        
+        System.out.println("Item added to cart, waiting for sync...");
+        try { Thread.sleep(4000); } catch(Exception e) {}
         
         navigateTo("/cart");
         try {
             wait.until(ExpectedConditions.presenceOfElementLocated(By.xpath("//*[contains(@class, 'item')]")));
         } catch (TimeoutException e) {
-            driver.navigate().refresh(); // Force refresh if React is stale
+            System.out.println("Cart empty, retrying refresh...");
+            driver.navigate().refresh();
             wait.until(ExpectedConditions.presenceOfElementLocated(By.xpath("//*[contains(@class, 'item')]")));
         }
     }
@@ -145,9 +157,13 @@ public class AppTest {
 
     @Test @Order(9) @DisplayName("9. Checkout Navigation")
     public void testCheckoutFlow() {
+        System.out.println("Starting Checkout Flow...");
         login(testUserEmail, TEST_PASSWORD);
-        testAddToCart(); // This now includes the refresh safety
-        jsClick(wait.until(ExpectedConditions.elementToBeClickable(By.xpath("//a[contains(text(), 'Checkout')]"))));
+        doAddToCart(); // Call the manual steps
+        
+        System.out.println("Clicking Checkout...");
+        WebElement checkoutBtn = wait.until(ExpectedConditions.elementToBeClickable(By.xpath("//a[contains(text(), 'Checkout')]")));
+        jsClick(checkoutBtn);
         wait.until(ExpectedConditions.urlContains("/checkout"));
     }
 
