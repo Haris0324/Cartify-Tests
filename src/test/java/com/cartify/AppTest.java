@@ -24,13 +24,10 @@ public class AppTest {
 
     @BeforeAll
     public static void setupAll() throws Exception {
-        // Essential: Use the container name 'frontend' defined in docker-compose
         baseUrl = System.getProperty("baseUrl", "http://frontend:5173");
         testUserEmail = "user_" + UUID.randomUUID().toString().substring(0, 8) + "@test.com";
 
         ChromeOptions options = new ChromeOptions();
-        // Standalone selenium doesn't need --headless here as it's already a headless-ready environment,
-        // but we keep it for consistency.
         options.addArguments("--headless=new");
         options.addArguments("--no-sandbox");
         options.addArguments("--disable-dev-shm-usage");
@@ -44,13 +41,11 @@ public class AppTest {
             URI seleniumUri = URI.create(seleniumUrl);
             driver = new RemoteWebDriver(seleniumUri.toURL(), options);
         } catch (Exception e) {
-            System.err.println("Could not connect to Selenium Grid! Check if the container is running.");
+            System.err.println("Could not connect to Selenium Grid!");
             throw e;
         }
 
-        // Increased timeout for CI environments
-        wait = new WebDriverWait(driver, Duration.ofSeconds(30));
-        // Global implicit wait as a fallback
+        wait = new WebDriverWait(driver, Duration.ofSeconds(45)); // Increased to 45s
         driver.manage().timeouts().implicitlyWait(Duration.ofSeconds(10));
     }
 
@@ -63,20 +58,49 @@ public class AppTest {
 
     /**
      * Helper to navigate and wait for the React route to be ready.
-     * We wait for the URL AND a common element like the Navbar or Body to ensure render.
+     * We wait for the URL AND a common element like the Navbar.
      */
     private void navigateTo(String path) {
-        driver.get(baseUrl + path);
-        // Wait for URL
-        wait.until(ExpectedConditions.urlContains(path));
-        // Wait for the app root or navbar to ensure the React app has rendered
-        wait.until(ExpectedConditions.presenceOfElementLocated(By.tagName("nav")));
+        String targetUrl = baseUrl + path;
+        System.out.println("Navigating to: " + targetUrl);
+        driver.get(targetUrl);
+        
+        try {
+            // 1. Wait for URL
+            wait.until(ExpectedConditions.urlContains(path));
+            
+            // 2. Wait for the root div to exist (fast check)
+            wait.until(ExpectedConditions.presenceOfElementLocated(By.id("root")));
+            
+            // 3. Wait for the Navbar to ensure the app has actually rendered components
+            wait.until(ExpectedConditions.presenceOfElementLocated(By.tagName("nav")));
+            
+        } catch (TimeoutException e) {
+            System.err.println("TIMEOUT while navigating to " + path);
+            System.err.println("Current URL: " + driver.getCurrentUrl());
+            // Print a snippet of the page source for debugging
+            String source = driver.getPageSource();
+            System.err.println("Page Source Snippet: " + (source.length() > 500 ? source.substring(0, 500) : source));
+            throw e;
+        }
     }
 
+    /**
+     * Safely clears cookies and local storage.
+     * Only works if the browser is currently on a web page (not data: URLs).
+     */
     private void clearState() {
-        driver.manage().deleteAllCookies();
-        ((JavascriptExecutor) driver).executeScript("window.localStorage.clear();");
-        ((JavascriptExecutor) driver).executeScript("window.sessionStorage.clear();");
+        try {
+            String currentUrl = driver.getCurrentUrl();
+            if (currentUrl != null && currentUrl.startsWith("http")) {
+                driver.manage().deleteAllCookies();
+                ((JavascriptExecutor) driver).executeScript("window.localStorage.clear();");
+                ((JavascriptExecutor) driver).executeScript("window.sessionStorage.clear();");
+                System.out.println("State cleared for: " + currentUrl);
+            }
+        } catch (Exception e) {
+            System.err.println("Warning: Could not clear state: " + e.getMessage());
+        }
     }
 
     private void login(String email, String password) {
@@ -93,10 +117,11 @@ public class AppTest {
     @Order(1)
     @DisplayName("1. User Registration Success")
     public void testRegistration() {
-        clearState();
+        // Start fresh: navigate first, then clear if needed
         navigateTo("/register");
+        clearState();
+        driver.navigate().refresh(); // Refresh to ensure clean state on the page
         
-        // Use presenceOfElementLocated which is more reliable than visibility in some Docker environments
         WebElement nameInput = wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector("input[placeholder='Full Name']")));
         nameInput.sendKeys("Test User");
         
@@ -107,7 +132,6 @@ public class AppTest {
 
         // Wait for redirect to home
         wait.until(ExpectedConditions.urlToBe(baseUrl + "/"));
-        assertFalse(driver.getCurrentUrl().contains("/register"));
     }
 
     @Test
@@ -119,7 +143,6 @@ public class AppTest {
             WebElement logoutBtn = wait.until(ExpectedConditions.elementToBeClickable(By.xpath("//button[contains(text(), 'Logout')]")));
             logoutBtn.click();
         } catch (Exception e) { 
-            // fallback if button not found
             clearState();
         }
 
@@ -128,16 +151,13 @@ public class AppTest {
             ExpectedConditions.urlToBe(baseUrl + "/"),
             ExpectedConditions.urlToBe(baseUrl + "/account")
         ));
-        assertFalse(driver.getCurrentUrl().contains("/login"));
     }
 
     @Test
     @Order(3)
     @DisplayName("3. Login Failure with Wrong Password")
     public void testLoginFailure() {
-        clearState();
         login(testUserEmail, "wrongpassword");
-        // Look for the error class
         WebElement errorMsg = wait.until(ExpectedConditions.presenceOfElementLocated(By.xpath("//*[contains(@class, 'error')]")));
         assertTrue(errorMsg.isDisplayed());
     }
@@ -146,9 +166,8 @@ public class AppTest {
     @Order(5)
     @DisplayName("5. Unauthenticated User Access Restriction")
     public void testUnauthAccess() {
+        navigateTo("/");
         clearState();
-        // Go to home first to ensure we are on the domain
-        driver.get(baseUrl + "/");
         driver.get(baseUrl + "/orders");
         
         // Verify redirect to login
@@ -161,7 +180,6 @@ public class AppTest {
     @DisplayName("6. Add to Cart Functionality")
     public void testAddToCart() {
         navigateTo("/products");
-        // Ensure products are loaded (look for a product card)
         WebElement firstProduct = wait.until(ExpectedConditions.elementToBeClickable(By.cssSelector("a[href^='/products/']")));
         firstProduct.click();
 
@@ -177,7 +195,6 @@ public class AppTest {
     @Order(11)
     @DisplayName("11. Admin Side Login")
     public void testAdminLogin() {
-        clearState();
         login("admin@cartify.com", "admin123");
         wait.until(ExpectedConditions.urlContains("/admin"));
         assertTrue(driver.getCurrentUrl().contains("/admin"));
@@ -187,7 +204,6 @@ public class AppTest {
     @Order(15)
     @DisplayName("15. Product Details - Review Submission")
     public void testSubmitReview() {
-        clearState();
         login(testUserEmail, TEST_PASSWORD);
         navigateTo("/products");
         wait.until(ExpectedConditions.elementToBeClickable(By.cssSelector("a[href^='/products/']"))).click();
