@@ -88,9 +88,13 @@ public class AppTest {
     public void testAdminAddProduct() {
         jsClick(wait.until(ExpectedConditions.elementToBeClickable(By.xpath("//button[contains(translate(text(), 'PRODUCTS', 'products'), 'products')]"))));
         try { Thread.sleep(2000); } catch(Exception e) {}
-        driver.findElement(By.cssSelector("input[required]")).sendKeys("Auto Prod Test");
-        driver.findElement(By.cssSelector("input[type='number']")).sendKeys("999");
-        driver.findElement(By.tagName("textarea")).sendKeys("Guaranteed stock for tests");
+        
+        // Use precise labels to ensure we hit the correct input fields
+        driver.findElement(By.xpath("//label[text()='Name']/following-sibling::input")).sendKeys("Auto Prod Test");
+        driver.findElement(By.xpath("//label[text()='Price']/following-sibling::input")).sendKeys("99.99");
+        driver.findElement(By.xpath("//label[text()='Stock']/following-sibling::input")).sendKeys("999");
+        driver.findElement(By.xpath("//label[text()='Description']/following-sibling::textarea")).sendKeys("Guaranteed stock for tests");
+        
         jsClick(driver.findElement(By.xpath("//button[contains(text(), 'Add')]")));
         try { Thread.sleep(3000); } catch(Exception e) {}
     }
@@ -147,6 +151,7 @@ public class AppTest {
     public void testSearch() {
         navigateTo("/products");
         WebElement s = wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector("input[placeholder*='Search']")));
+        s.clear();
         s.sendKeys("Auto Prod");
         s.sendKeys(Keys.ENTER);
         wait.until(ExpectedConditions.urlContains("search="));
@@ -157,13 +162,17 @@ public class AppTest {
         login(testUserEmail, TEST_PASSWORD); // Log back in
         
         navigateTo("/products");
-        // Search specifically for our guaranteed product
         WebElement s = wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector("input[placeholder*='Search']")));
+        s.clear();
         s.sendKeys("Auto Prod Test");
         s.sendKeys(Keys.ENTER);
         try { Thread.sleep(2000); } catch(Exception e) {}
 
         jsClick(wait.until(ExpectedConditions.elementToBeClickable(By.xpath("(//a[contains(@class, 'card')])[1]"))));
+        
+        // Wait for Product Detail page to load fully
+        wait.until(ExpectedConditions.presenceOfElementLocated(By.tagName("h1")));
+        
         jsClick(wait.until(ExpectedConditions.elementToBeClickable(By.xpath("//button[contains(text(), 'Add to Cart')]"))));
         try { Thread.sleep(4000); } catch(Exception e) {} // Wait for DB sync
         
@@ -183,11 +192,14 @@ public class AppTest {
     public void testCheckoutFlow() {
         navigateTo("/products");
         WebElement s = wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector("input[placeholder*='Search']")));
+        s.clear();
         s.sendKeys("Auto Prod Test");
         s.sendKeys(Keys.ENTER);
         try { Thread.sleep(2000); } catch(Exception e) {}
 
         jsClick(wait.until(ExpectedConditions.elementToBeClickable(By.xpath("(//a[contains(@class, 'card')])[1]"))));
+        wait.until(ExpectedConditions.presenceOfElementLocated(By.tagName("h1")));
+        
         jsClick(wait.until(ExpectedConditions.elementToBeClickable(By.xpath("//button[contains(text(), 'Add to Cart')]"))));
         try { Thread.sleep(3000); } catch(Exception e) {}
         
@@ -208,6 +220,7 @@ public class AppTest {
     public void testSubmitReview() {
         navigateTo("/products");
         WebElement s = wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector("input[placeholder*='Search']")));
+        s.clear();
         s.sendKeys("Auto Prod Test");
         s.sendKeys(Keys.ENTER);
         try { Thread.sleep(2000); } catch(Exception e) {}
