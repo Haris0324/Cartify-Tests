@@ -29,6 +29,8 @@ public class AppTest {
         testUserEmail = "user_" + UUID.randomUUID().toString().substring(0, 8) + "@test.com";
 
         ChromeOptions options = new ChromeOptions();
+        // Standalone selenium doesn't need --headless here as it's already a headless-ready environment,
+        // but we keep it for consistency.
         options.addArguments("--headless=new");
         options.addArguments("--no-sandbox");
         options.addArguments("--disable-dev-shm-usage");
@@ -46,9 +48,10 @@ public class AppTest {
             throw e;
         }
 
-        // Increased timeout slightly for slower CI environments
+        // Increased timeout for CI environments
         wait = new WebDriverWait(driver, Duration.ofSeconds(30));
-        driver.manage().timeouts().implicitlyWait(Duration.ofSeconds(5));
+        // Global implicit wait as a fallback
+        driver.manage().timeouts().implicitlyWait(Duration.ofSeconds(10));
     }
 
     @AfterAll
@@ -59,16 +62,26 @@ public class AppTest {
     }
 
     /**
-     * Helper to navigate and wait for the React route to be ready
+     * Helper to navigate and wait for the React route to be ready.
+     * We wait for the URL AND a common element like the Navbar or Body to ensure render.
      */
     private void navigateTo(String path) {
         driver.get(baseUrl + path);
+        // Wait for URL
         wait.until(ExpectedConditions.urlContains(path));
+        // Wait for the app root or navbar to ensure the React app has rendered
+        wait.until(ExpectedConditions.presenceOfElementLocated(By.tagName("nav")));
+    }
+
+    private void clearState() {
+        driver.manage().deleteAllCookies();
+        ((JavascriptExecutor) driver).executeScript("window.localStorage.clear();");
+        ((JavascriptExecutor) driver).executeScript("window.sessionStorage.clear();");
     }
 
     private void login(String email, String password) {
         navigateTo("/login");
-        WebElement emailInput = wait.until(ExpectedConditions.visibilityOfElementLocated(By.cssSelector("input[type='email']")));
+        WebElement emailInput = wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector("input[type='email']")));
         emailInput.clear();
         emailInput.sendKeys(email);
         
@@ -80,15 +93,14 @@ public class AppTest {
     @Order(1)
     @DisplayName("1. User Registration Success")
     public void testRegistration() {
+        clearState();
         navigateTo("/register");
         
-        // Exact match for your Register component placeholder
-        WebElement nameInput = wait.until(ExpectedConditions.visibilityOfElementLocated(By.cssSelector("input[placeholder='Full Name']")));
+        // Use presenceOfElementLocated which is more reliable than visibility in some Docker environments
+        WebElement nameInput = wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector("input[placeholder='Full Name']")));
         nameInput.sendKeys("Test User");
         
         driver.findElement(By.cssSelector("input[placeholder='Email']")).sendKeys(testUserEmail);
-        
-        // Use partial match for the password placeholder as it contains "(min 6 characters)"
         driver.findElement(By.cssSelector("input[placeholder*='Password']")).sendKeys(TEST_PASSWORD);
         
         driver.findElement(By.cssSelector("button[type='submit']")).click();
@@ -104,11 +116,11 @@ public class AppTest {
     public void testLogin() {
         navigateTo("/");
         try {
-            // Attempt logout if the button is present
             WebElement logoutBtn = wait.until(ExpectedConditions.elementToBeClickable(By.xpath("//button[contains(text(), 'Logout')]")));
             logoutBtn.click();
         } catch (Exception e) { 
-            /* already logged out or button not found */ 
+            // fallback if button not found
+            clearState();
         }
 
         login(testUserEmail, TEST_PASSWORD);
@@ -123,9 +135,10 @@ public class AppTest {
     @Order(3)
     @DisplayName("3. Login Failure with Wrong Password")
     public void testLoginFailure() {
+        clearState();
         login(testUserEmail, "wrongpassword");
-        // Looking for the styles.error class defined in your component
-        WebElement errorMsg = wait.until(ExpectedConditions.visibilityOfElementLocated(By.xpath("//*[contains(@class, 'error')]")));
+        // Look for the error class
+        WebElement errorMsg = wait.until(ExpectedConditions.presenceOfElementLocated(By.xpath("//*[contains(@class, 'error')]")));
         assertTrue(errorMsg.isDisplayed());
     }
 
@@ -133,8 +146,11 @@ public class AppTest {
     @Order(5)
     @DisplayName("5. Unauthenticated User Access Restriction")
     public void testUnauthAccess() {
-        driver.manage().deleteAllCookies();
-        navigateTo("/orders");
+        clearState();
+        // Go to home first to ensure we are on the domain
+        driver.get(baseUrl + "/");
+        driver.get(baseUrl + "/orders");
+        
         // Verify redirect to login
         wait.until(ExpectedConditions.urlContains("/login"));
         assertTrue(driver.getCurrentUrl().contains("login"));
@@ -145,6 +161,7 @@ public class AppTest {
     @DisplayName("6. Add to Cart Functionality")
     public void testAddToCart() {
         navigateTo("/products");
+        // Ensure products are loaded (look for a product card)
         WebElement firstProduct = wait.until(ExpectedConditions.elementToBeClickable(By.cssSelector("a[href^='/products/']")));
         firstProduct.click();
 
@@ -152,8 +169,7 @@ public class AppTest {
         addBtn.click();
 
         navigateTo("/cart");
-        // Verify item exists in cart
-        WebElement cartItem = wait.until(ExpectedConditions.visibilityOfElementLocated(By.xpath("//*[contains(@class, 'item')]")));
+        WebElement cartItem = wait.until(ExpectedConditions.presenceOfElementLocated(By.xpath("//*[contains(@class, 'item')]")));
         assertTrue(cartItem.isDisplayed());
     }
 
@@ -161,6 +177,7 @@ public class AppTest {
     @Order(11)
     @DisplayName("11. Admin Side Login")
     public void testAdminLogin() {
+        clearState();
         login("admin@cartify.com", "admin123");
         wait.until(ExpectedConditions.urlContains("/admin"));
         assertTrue(driver.getCurrentUrl().contains("/admin"));
@@ -170,15 +187,16 @@ public class AppTest {
     @Order(15)
     @DisplayName("15. Product Details - Review Submission")
     public void testSubmitReview() {
+        clearState();
         login(testUserEmail, TEST_PASSWORD);
         navigateTo("/products");
         wait.until(ExpectedConditions.elementToBeClickable(By.cssSelector("a[href^='/products/']"))).click();
 
-        WebElement reviewArea = wait.until(ExpectedConditions.visibilityOfElementLocated(By.xpath("//textarea[contains(@placeholder, 'experience')]")));
+        WebElement reviewArea = wait.until(ExpectedConditions.presenceOfElementLocated(By.xpath("//textarea[contains(@placeholder, 'experience')]")));
         reviewArea.sendKeys("Great product! Testing...");
         driver.findElement(By.xpath("//button[text()='Submit Review']")).click();
 
-        WebElement reviewText = wait.until(ExpectedConditions.visibilityOfElementLocated(By.xpath("//p[text()='Great product! Testing...']")));
+        WebElement reviewText = wait.until(ExpectedConditions.presenceOfElementLocated(By.xpath("//p[text()='Great product! Testing...']")));
         assertTrue(reviewText.isDisplayed());
     }
 }
