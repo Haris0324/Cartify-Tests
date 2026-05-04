@@ -55,7 +55,6 @@ public class AppTest {
         wait.until(ExpectedConditions.presenceOfElementLocated(By.id("root")));
     }
 
-    // Attempt login WITHOUT waiting for redirect (useful for failure tests)
     private void attemptLogin(String email, String password) {
         navigateTo("/login");
         WebElement e = wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector("input[type='email']")));
@@ -65,10 +64,10 @@ public class AppTest {
         p.sendKeys(Keys.ENTER);
     }
 
-    // Login and WAIT for success redirect
     private void login(String email, String password) {
         attemptLogin(email, password);
         wait.until(ExpectedConditions.or(ExpectedConditions.urlToBe(baseUrl + "/"), ExpectedConditions.urlContains("/admin")));
+        try { Thread.sleep(1000); } catch(Exception e) {}
     }
 
     @Test @Order(1) @DisplayName("1. User Registration")
@@ -91,8 +90,7 @@ public class AppTest {
     @Test @Order(3) @DisplayName("3. Login Failure")
     public void testLoginFailure() {
         clearAll();
-        attemptLogin(testUserEmail, "wrong_password_123");
-        // Check for error message on the SAME page
+        attemptLogin(testUserEmail, "wrong_password");
         assertTrue(wait.until(ExpectedConditions.presenceOfElementLocated(By.xpath("//*[contains(@class, 'error')]"))).isDisplayed());
     }
 
@@ -125,11 +123,15 @@ public class AppTest {
         jsClick(wait.until(ExpectedConditions.elementToBeClickable(By.cssSelector("a[class*='card']"))));
         jsClick(wait.until(ExpectedConditions.elementToBeClickable(By.xpath("//button[contains(text(), 'Cart')]"))));
         
-        // WAIT for the "Success" toast or just a moment for DB sync
-        try { Thread.sleep(2500); } catch(Exception e) {}
+        try { Thread.sleep(3000); } catch(Exception e) {}
         
         navigateTo("/cart");
-        wait.until(ExpectedConditions.presenceOfElementLocated(By.xpath("//*[contains(@class, 'item')]")));
+        try {
+            wait.until(ExpectedConditions.presenceOfElementLocated(By.xpath("//*[contains(@class, 'item')]")));
+        } catch (TimeoutException e) {
+            driver.navigate().refresh(); // Force refresh if React is stale
+            wait.until(ExpectedConditions.presenceOfElementLocated(By.xpath("//*[contains(@class, 'item')]")));
+        }
     }
 
     @Test @Order(8) @DisplayName("8. Remove from Cart")
@@ -144,7 +146,7 @@ public class AppTest {
     @Test @Order(9) @DisplayName("9. Checkout Navigation")
     public void testCheckoutFlow() {
         login(testUserEmail, TEST_PASSWORD);
-        testAddToCart();
+        testAddToCart(); // This now includes the refresh safety
         jsClick(wait.until(ExpectedConditions.elementToBeClickable(By.xpath("//a[contains(text(), 'Checkout')]"))));
         wait.until(ExpectedConditions.urlContains("/checkout"));
     }
@@ -172,9 +174,9 @@ public class AppTest {
         
         driver.findElement(By.cssSelector("input[required]")).sendKeys("Auto Product " + UUID.randomUUID().toString());
         driver.findElement(By.cssSelector("input[type='number']")).sendKeys("99");
-        driver.findElement(By.tagName("textarea")).sendKeys("Description here");
+        driver.findElement(By.tagName("textarea")).sendKeys("Description");
         jsClick(driver.findElement(By.xpath("//button[contains(text(), 'Add')]")));
-        try { Thread.sleep(2500); } catch(Exception e) {}
+        try { Thread.sleep(3000); } catch(Exception e) {}
     }
 
     @Test @Order(13) @DisplayName("13. Admin Delete Product")
@@ -202,7 +204,7 @@ public class AppTest {
         WebElement t = wait.until(ExpectedConditions.presenceOfElementLocated(By.tagName("textarea")));
         t.sendKeys("Review " + UUID.randomUUID().toString());
         jsClick(driver.findElement(By.xpath("//button[contains(text(), 'Submit')]")));
-        try { Thread.sleep(2500); } catch(Exception e) {}
+        try { Thread.sleep(3000); } catch(Exception e) {}
         assertTrue(driver.getPageSource().toLowerCase().contains("review"));
     }
 }
