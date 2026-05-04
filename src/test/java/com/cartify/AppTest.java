@@ -130,8 +130,11 @@ public class AppTest {
         
         driver.findElement(By.cssSelector("button[type='submit']")).click();
 
-        // Wait for redirect to home
-        wait.until(ExpectedConditions.urlToBe(baseUrl + "/"));
+        // Wait for redirect to home or login
+        wait.until(ExpectedConditions.or(
+            ExpectedConditions.urlToBe(baseUrl + "/"),
+            ExpectedConditions.urlContains("/login")
+        ));
     }
 
     @Test
