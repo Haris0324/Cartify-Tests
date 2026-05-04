@@ -55,14 +55,19 @@ public class AppTest {
         wait.until(ExpectedConditions.presenceOfElementLocated(By.id("root")));
     }
 
-    private void login(String email, String password) {
+    // Attempt login WITHOUT waiting for redirect (useful for failure tests)
+    private void attemptLogin(String email, String password) {
         navigateTo("/login");
         WebElement e = wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector("input[type='email']")));
         e.clear(); e.sendKeys(email);
         WebElement p = driver.findElement(By.cssSelector("input[type='password']"));
         p.clear(); p.sendKeys(password);
         p.sendKeys(Keys.ENTER);
-        // Wait for login to complete
+    }
+
+    // Login and WAIT for success redirect
+    private void login(String email, String password) {
+        attemptLogin(email, password);
         wait.until(ExpectedConditions.or(ExpectedConditions.urlToBe(baseUrl + "/"), ExpectedConditions.urlContains("/admin")));
     }
 
@@ -81,13 +86,13 @@ public class AppTest {
     @Test @Order(2) @DisplayName("2. User Login Success")
     public void testLogin() {
         login(testUserEmail, TEST_PASSWORD);
-        wait.until(ExpectedConditions.urlContains("/"));
     }
 
     @Test @Order(3) @DisplayName("3. Login Failure")
     public void testLoginFailure() {
         clearAll();
-        login(testUserEmail, "wrong");
+        attemptLogin(testUserEmail, "wrong_password_123");
+        // Check for error message on the SAME page
         assertTrue(wait.until(ExpectedConditions.presenceOfElementLocated(By.xpath("//*[contains(@class, 'error')]"))).isDisplayed());
     }
 
@@ -117,10 +122,12 @@ public class AppTest {
     @Test @Order(7) @DisplayName("7. Add to Cart")
     public void testAddToCart() {
         navigateTo("/products");
-        // Use a more generic card selector
         jsClick(wait.until(ExpectedConditions.elementToBeClickable(By.cssSelector("a[class*='card']"))));
         jsClick(wait.until(ExpectedConditions.elementToBeClickable(By.xpath("//button[contains(text(), 'Cart')]"))));
-        try { Thread.sleep(2000); } catch(Exception e) {}
+        
+        // WAIT for the "Success" toast or just a moment for DB sync
+        try { Thread.sleep(2500); } catch(Exception e) {}
+        
         navigateTo("/cart");
         wait.until(ExpectedConditions.presenceOfElementLocated(By.xpath("//*[contains(@class, 'item')]")));
     }
@@ -146,7 +153,6 @@ public class AppTest {
     public void testUserProfile() {
         login(testUserEmail, TEST_PASSWORD);
         navigateTo("/account");
-        // Case-insensitive check for Account
         WebElement h1 = wait.until(ExpectedConditions.presenceOfElementLocated(By.tagName("h1")));
         assertTrue(h1.getText().toLowerCase().contains("account"));
     }
@@ -161,16 +167,14 @@ public class AppTest {
     @Test @Order(12) @DisplayName("12. Admin Add Product")
     public void testAdminAddProduct() {
         testAdminLogin();
-        // Case-insensitive tab click
         jsClick(wait.until(ExpectedConditions.elementToBeClickable(By.xpath("//button[contains(translate(text(), 'PRODUCTS', 'products'), 'products')]"))));
         try { Thread.sleep(2000); } catch(Exception e) {}
         
-        // Fill form to ensure a product exists for later tests
         driver.findElement(By.cssSelector("input[required]")).sendKeys("Auto Product " + UUID.randomUUID().toString());
         driver.findElement(By.cssSelector("input[type='number']")).sendKeys("99");
         driver.findElement(By.tagName("textarea")).sendKeys("Description here");
         jsClick(driver.findElement(By.xpath("//button[contains(text(), 'Add')]")));
-        try { Thread.sleep(2000); } catch(Exception e) {}
+        try { Thread.sleep(2500); } catch(Exception e) {}
     }
 
     @Test @Order(13) @DisplayName("13. Admin Delete Product")
@@ -198,7 +202,7 @@ public class AppTest {
         WebElement t = wait.until(ExpectedConditions.presenceOfElementLocated(By.tagName("textarea")));
         t.sendKeys("Review " + UUID.randomUUID().toString());
         jsClick(driver.findElement(By.xpath("//button[contains(text(), 'Submit')]")));
-        try { Thread.sleep(2000); } catch(Exception e) {}
+        try { Thread.sleep(2500); } catch(Exception e) {}
         assertTrue(driver.getPageSource().toLowerCase().contains("review"));
     }
 }
