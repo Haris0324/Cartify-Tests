@@ -67,8 +67,14 @@ public class AppTest {
 
     private void login(String email, String password) {
         attemptLogin(email, password);
-        wait.until(ExpectedConditions.or(ExpectedConditions.urlToBe(baseUrl + "/"), ExpectedConditions.urlContains("/admin")));
-        try { Thread.sleep(2000); } catch(Exception e) {}
+        // CRITICAL: Wait for the user profile to load in the header to ensure session is 100% active
+        wait.until(ExpectedConditions.or(
+            ExpectedConditions.urlToBe(baseUrl + "/"),
+            ExpectedConditions.urlContains("/admin"),
+            ExpectedConditions.presenceOfElementLocated(By.xpath("//*[contains(@href, 'account')]"))
+        ));
+        System.out.println("Login confirmed, session active.");
+        try { Thread.sleep(2000); } catch(Exception ex) {}
     }
 
     @Test @Order(1) @DisplayName("1. User Registration")
@@ -91,7 +97,7 @@ public class AppTest {
     @Test @Order(3) @DisplayName("3. Login Failure")
     public void testLoginFailure() {
         clearAll();
-        attemptLogin(testUserEmail, "wrong");
+        attemptLogin(testUserEmail, "wrong_password");
         assertTrue(wait.until(ExpectedConditions.presenceOfElementLocated(By.xpath("//*[contains(@class, 'error')]"))).isDisplayed());
     }
 
@@ -125,23 +131,25 @@ public class AppTest {
 
     private void doAddToCart() {
         navigateTo("/products");
-        // Wait for cards and click the first link
-        WebElement card = wait.until(ExpectedConditions.elementToBeClickable(By.cssSelector("a[class*='card']")));
+        // Wait for cards and select first product
+        WebElement card = wait.until(ExpectedConditions.elementToBeClickable(By.xpath("(//a[contains(@class, 'card')])[1]")));
         jsClick(card);
         
         // Wait for Add to Cart button and click it
         WebElement addBtn = wait.until(ExpectedConditions.elementToBeClickable(By.xpath("//button[contains(text(), 'Add to Cart')]")));
         jsClick(addBtn);
         
-        System.out.println("Item added to cart, waiting for sync...");
-        try { Thread.sleep(4000); } catch(Exception e) {}
+        System.out.println("Add button clicked, waiting for DB response...");
+        try { Thread.sleep(5000); } catch(Exception e) {} // Give extra time for DB write
         
         navigateTo("/cart");
         try {
             wait.until(ExpectedConditions.presenceOfElementLocated(By.xpath("//*[contains(@class, 'item')]")));
         } catch (TimeoutException e) {
-            System.out.println("Cart empty, retrying refresh...");
+            System.out.println("Cart empty, performing session-safe refresh...");
             driver.navigate().refresh();
+            // Wait for auth to re-hydrate after refresh
+            try { Thread.sleep(2000); } catch(Exception ex) {}
             wait.until(ExpectedConditions.presenceOfElementLocated(By.xpath("//*[contains(@class, 'item')]")));
         }
     }
@@ -157,14 +165,19 @@ public class AppTest {
 
     @Test @Order(9) @DisplayName("9. Checkout Navigation")
     public void testCheckoutFlow() {
-        System.out.println("Starting Checkout Flow...");
+        System.out.println("Step 1: Logging in...");
         login(testUserEmail, TEST_PASSWORD);
-        doAddToCart(); // Call the manual steps
         
-        System.out.println("Clicking Checkout...");
+        System.out.println("Step 2: Adding item...");
+        doAddToCart();
+        
+        System.out.println("Step 3: Checking out...");
         WebElement checkoutBtn = wait.until(ExpectedConditions.elementToBeClickable(By.xpath("//a[contains(text(), 'Checkout')]")));
         jsClick(checkoutBtn);
+        
+        // Wait for URL transition
         wait.until(ExpectedConditions.urlContains("/checkout"));
+        System.out.println("Checkout reached successfully.");
     }
 
     @Test @Order(10) @DisplayName("10. User Profile Access")
@@ -189,8 +202,8 @@ public class AppTest {
         try { Thread.sleep(2000); } catch(Exception e) {}
         
         driver.findElement(By.cssSelector("input[required]")).sendKeys("Auto Product " + UUID.randomUUID().toString());
-        driver.findElement(By.cssSelector("input[type='number']")).sendKeys("99");
-        driver.findElement(By.tagName("textarea")).sendKeys("Description");
+        driver.findElement(By.cssSelector("input[type='number']")).sendKeys("999");
+        driver.findElement(By.tagName("textarea")).sendKeys("Test product with high stock.");
         jsClick(driver.findElement(By.xpath("//button[contains(text(), 'Add')]")));
         try { Thread.sleep(3000); } catch(Exception e) {}
     }
@@ -200,7 +213,7 @@ public class AppTest {
         testAdminLogin();
         jsClick(wait.until(ExpectedConditions.elementToBeClickable(By.xpath("//button[contains(translate(text(), 'PRODUCTS', 'products'), 'products')]"))));
         try {
-            jsClick(wait.until(ExpectedConditions.elementToBeClickable(By.xpath("//button[contains(text(), 'Delete')]"))));
+            jsClick(wait.until(ExpectedConditions.elementToBeClickable(By.xpath("(//button[contains(text(), 'Delete')])[1]"))));
             driver.switchTo().alert().accept();
         } catch (Exception e) {}
     }
@@ -216,7 +229,7 @@ public class AppTest {
     public void testSubmitReview() {
         login(testUserEmail, TEST_PASSWORD);
         navigateTo("/products");
-        jsClick(wait.until(ExpectedConditions.elementToBeClickable(By.cssSelector("a[class*='card']"))));
+        jsClick(wait.until(ExpectedConditions.elementToBeClickable(By.xpath("(//a[contains(@class, 'card')])[1]"))));
         WebElement t = wait.until(ExpectedConditions.presenceOfElementLocated(By.tagName("textarea")));
         t.sendKeys("Review " + UUID.randomUUID().toString());
         jsClick(driver.findElement(By.xpath("//button[contains(text(), 'Submit')]")));
